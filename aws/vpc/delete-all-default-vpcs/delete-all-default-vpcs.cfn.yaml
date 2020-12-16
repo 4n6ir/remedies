@@ -1,0 +1,270 @@
+Resources:
+  roleC7B7E775:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: delete-all-default-vpcs
+          Value: delete-all-default-vpcs
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/role/Resource
+  roleDefaultPolicy7C980EBA:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - ec2:DescribeRegions
+              - ec2:DescribeVpcs
+              - ec2:DeleteVpc
+              - ec2:DescribeInternetGateways
+              - ec2:DetachInternetGateway
+              - ec2:DeleteInternetGateway
+              - ec2:DescribeSubnets
+              - ec2:DeleteSubnet
+              - events:DisableRule
+              - ssm:GetParameter
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: roleDefaultPolicy7C980EBA
+      Roles:
+        - Ref: roleC7B7E775
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/role/DefaultPolicy/Resource
+  computeFE7B07EF:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: >-
+          import boto3
+
+          import json
+
+          import logging
+
+          import os
+
+
+          logger = logging.getLogger()
+
+          logger.setLevel(logging.INFO)
+
+
+          def handler(event, context):
+              
+              client = boto3.client('ec2')
+              regions = client.describe_regions()
+              
+              for region in regions['Regions']:
+                  ec2_client = boto3.client('ec2', region_name=region['RegionName'])
+                  paginator = ec2_client.get_paginator('describe_vpcs')
+                  response_iterator = paginator.paginate()
+                  for page in response_iterator:
+                      if len(page['Vpcs']) > 0:
+                          for item in page['Vpcs']:
+                              if item['IsDefault'] is True:
+                                  
+                                  paginator2 = ec2_client.get_paginator('describe_internet_gateways')
+                                  response_iterator2 = paginator2.paginate()
+                                  for page2 in response_iterator2:
+                                      for item2 in page2['InternetGateways']:
+                                          if len(page2['InternetGateways']) > 0:
+                                              if item2['Attachments'][0]['VpcId'] == item['VpcId']:
+                                                  ec2_client.detach_internet_gateway(
+                                                      InternetGatewayId=item2['InternetGatewayId'],
+                                                      VpcId=item['VpcId']
+                                                  )
+                                                  ec2_client.delete_internet_gateway(
+                                                      InternetGatewayId=item2['InternetGatewayId']
+                                                  )
+
+                                  paginator3 = ec2_client.get_paginator('describe_subnets')
+                                  response_iterator3 = paginator3.paginate()
+                                  for page3 in response_iterator3:
+                                      for item3 in page3['Subnets']:
+                                          if len(page3['Subnets']) > 0:
+                                              if item3['VpcId'] == item['VpcId']:
+                                                  try:
+                                                      ec2_client.delete_subnet(
+                                                          SubnetId=item3['SubnetId']
+                                                      )
+                                                  except:
+                                                      logger.info('USED '+str(item3))
+
+                                  try:
+                                      ec2_client.delete_vpc(
+                                          VpcId=item['VpcId']
+                                      )
+                                  except:
+                                      logger.info('USED '+str(item))
+                                      pass
+
+              client = boto3.client('ssm')
+              response = client.get_parameter(Name=os.environ['RULE'])
+              value = response['Parameter']['Value']
+
+              client = boto3.client('events')
+              response = client.disable_rule(Name=value)
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Delete All Default VPCs Remedy')
+              }
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - roleC7B7E775
+          - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          RULE: delete-all-default-vpcs
+      Tags:
+        - Key: delete-all-default-vpcs
+          Value: delete-all-default-vpcs
+      Timeout: 60
+    DependsOn:
+      - roleDefaultPolicy7C980EBA
+      - roleC7B7E775
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/compute/Resource
+  logs0B6081B1:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: computeFE7B07EF
+      RetentionInDays: 1
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/logs/Resource
+  ruleF2C1DCDC:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: cron(* * ? * * *)
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - computeFE7B07EF
+              - Arn
+          Id: Target0
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/rule/Resource
+  ruleAllowEventRuledeletealldefaultvpcsrule5A56E7C5B6801496:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - computeFE7B07EF
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - ruleF2C1DCDC
+          - Arn
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/rule/AllowEventRuledeletealldefaultvpcsrule5A56E7C5
+  parameter76C24FC7:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Ref: ruleF2C1DCDC
+      Description: Delete All Default VPCs Remedy
+      Name: delete-all-default-vpcs
+      Tags:
+        delete-all-default-vpcs: delete-all-default-vpcs
+      Tier: Standard
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/parameter/Resource
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Modules: aws-cdk=1.78.0,@aws-cdk/assets=1.78.0,@aws-cdk/aws-apigateway=1.78.0,@aws-cdk/aws-apigatewayv2=1.78.0,@aws-cdk/aws-applicationautoscaling=1.78.0,@aws-cdk/aws-autoscaling=1.78.0,@aws-cdk/aws-autoscaling-common=1.78.0,@aws-cdk/aws-autoscaling-hooktargets=1.78.0,@aws-cdk/aws-batch=1.78.0,@aws-cdk/aws-certificatemanager=1.78.0,@aws-cdk/aws-cloudformation=1.78.0,@aws-cdk/aws-cloudfront=1.78.0,@aws-cdk/aws-cloudwatch=1.78.0,@aws-cdk/aws-codebuild=1.78.0,@aws-cdk/aws-codecommit=1.78.0,@aws-cdk/aws-codeguruprofiler=1.78.0,@aws-cdk/aws-codepipeline=1.78.0,@aws-cdk/aws-cognito=1.78.0,@aws-cdk/aws-ec2=1.78.0,@aws-cdk/aws-ecr=1.78.0,@aws-cdk/aws-ecr-assets=1.78.0,@aws-cdk/aws-ecs=1.78.0,@aws-cdk/aws-efs=1.78.0,@aws-cdk/aws-elasticloadbalancing=1.78.0,@aws-cdk/aws-elasticloadbalancingv2=1.78.0,@aws-cdk/aws-events=1.78.0,@aws-cdk/aws-events-targets=1.78.0,@aws-cdk/aws-iam=1.78.0,@aws-cdk/aws-kinesis=1.78.0,@aws-cdk/aws-kinesisfirehose=1.78.0,@aws-cdk/aws-kms=1.78.0,@aws-cdk/aws-lambda=1.78.0,@aws-cdk/aws-logs=1.78.0,@aws-cdk/aws-route53=1.78.0,@aws-cdk/aws-route53-targets=1.78.0,@aws-cdk/aws-s3=1.78.0,@aws-cdk/aws-s3-assets=1.78.0,@aws-cdk/aws-sam=1.78.0,@aws-cdk/aws-secretsmanager=1.78.0,@aws-cdk/aws-servicediscovery=1.78.0,@aws-cdk/aws-sns=1.78.0,@aws-cdk/aws-sns-subscriptions=1.78.0,@aws-cdk/aws-sqs=1.78.0,@aws-cdk/aws-ssm=1.78.0,@aws-cdk/aws-stepfunctions=1.78.0,@aws-cdk/cloud-assembly-schema=1.78.0,@aws-cdk/core=1.78.0,@aws-cdk/custom-resources=1.78.0,@aws-cdk/cx-api=1.78.0,@aws-cdk/region-info=1.78.0,jsii-runtime=Python/3.8.6
+    Metadata:
+      aws:cdk:path: delete-all-default-vpcs/CDKMetadata/Default
+    Condition: CDKMetadataAvailable
+Conditions:
+  CDKMetadataAvailable:
+    Fn::Or:
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ca-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-northwest-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-central-1
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-3
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - me-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - sa-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-2
+
