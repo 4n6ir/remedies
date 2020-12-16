@@ -1,0 +1,689 @@
+Resources:
+  policyE16B4B70:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: bk
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      GlobalSecondaryIndexes:
+        - IndexName: action
+          KeySchema:
+            - AttributeName: pk
+              KeyType: HASH
+            - AttributeName: bk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+      TimeToLiveSpecification:
+        AttributeName: token
+        Enabled: true
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/policy/Resource
+  dbparam94B6CB0E:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Value:
+        Ref: policyE16B4B70
+      Description: magicianCDK-TableName
+      Name: /magicianCDK/TableName
+      Tags:
+        demystifying-star-permissions: demystifying-star-permissions
+      Tier: Standard
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/db_param/Resource
+  amazonrole3E8DA125:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_role/Resource
+  amazonroleDefaultPolicyF8B8F053:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:PutItem
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: amazonroleDefaultPolicyF8B8F053
+      Roles:
+        - Ref: amazonrole3E8DA125
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_role/DefaultPolicy/Resource
+  amazonlambda88778857:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: "### https://awspolicygen.s3.amazonaws.com/policygen.html ###
+
+
+          import boto3
+
+          import datetime
+
+          import json
+
+          import logging
+
+          import os
+
+          import urllib.request
+
+
+          logger = logging.getLogger()
+
+          logger.setLevel(logging.INFO)
+
+
+          def handler(event, context):
+
+          \    logger.info(event)
+
+          \   \ 
+
+          \    dynamodb = boto3.resource('dynamodb')
+
+          \    table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+
+          \   \ 
+
+          \    orig = datetime.datetime.now()
+
+          \    new = orig + datetime.timedelta(days=33)
+
+          \   \ 
+
+          \    url = 'https://awspolicygen.s3.amazonaws.com/js/policies.js'
+
+          \    with urllib.request.urlopen(url) as response:
+
+          \        output = response.read()
+
+          \    response.close()
+
+          \    with open('/tmp/policies.js', 'wb') as f:
+
+          \        f.write(output)
+
+          \    f.close()
+
+          \   \ 
+
+          \    f = open('/tmp/policies.js','r')
+
+          \    reading = f.readline()
+
+          \    output = reading.split('HasResource')
+
+          \    output = output[1:-1]
+
+          \    for item in output:
+
+          \        parsedstart = item.split('[')
+
+          \        named = parsedstart[0].split(':')
+
+          \        longname = named[1].split('\"')
+
+          \        thelongname = longname[1]
+
+          \        shortname = named[3].split('\"')
+
+          \        theshortname = shortname[1]
+
+          \        parsedend = parsedstart[1].split(']')
+
+          \        parsedlist = parsedend[0].split(',')
+
+          \        table.put_item(
+
+          \            Item= { \ 
+
+          \                'pk': 'AWS#',
+
+          \                'sk': 'SERVICE#'+theshortname,
+
+          \                'name': thelongname,
+
+          \                'service': theshortname,
+
+          \                'expire': int(new.timestamp()),
+
+          \                'lastseen': str(orig)
+
+          \            }
+
+          \        )     \ 
+
+          \        for action in parsedlist:
+
+          \            theaction = action[1:-1]
+
+          \            table.put_item(
+
+          \                Item= {
+
+          \                    'pk': 'AWS#',
+
+          \                    'sk': 'ACTION#'+theshortname+'#'+theaction,
+
+          \                    'bk': 'ACTION#'+theaction+'#'+theshortname,
+
+          \                    'name': thelongname,
+
+          \                    'service': theshortname,
+
+          \                    'action': theaction,
+
+          \                    'expire': int(new.timestamp()),
+
+          \                    'lastseen': str(orig)
+
+          \                }
+
+          \            )\ 
+
+
+          \    return {
+
+          \        'statusCode': 200,
+
+          \        'body': json.dumps('aws-policy-service-action')
+
+          \    }
+
+          \    "
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - amazonrole3E8DA125
+          - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          DYNAMODB_TABLE:
+            Ref: policyE16B4B70
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+      Timeout: 900
+    DependsOn:
+      - amazonroleDefaultPolicyF8B8F053
+      - amazonrole3E8DA125
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_lambda/Resource
+  amazonlogsEC86192D:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: amazonlambda88778857
+      RetentionInDays: 1
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_logs/Resource
+  amazonevent7294019E:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: cron(0 11 ? * * *)
+      State: ENABLED
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - amazonlambda88778857
+              - Arn
+          Id: Target0
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_event/Resource
+  amazoneventAllowEventRuledemystifyingstarpermissionsamazonevent69EBF7318A890296:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - amazonlambda88778857
+          - Arn
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - amazonevent7294019E
+          - Arn
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/amazon_event/AllowEventRuledemystifyingstarpermissionsamazonevent69EBF731
+  actionbeginsrole984A95C8:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/action_begins_role/Resource
+  actionbeginsroleDefaultPolicy8F0C9A57:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:Query
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: actionbeginsroleDefaultPolicy8F0C9A57
+      Roles:
+        - Ref: actionbeginsrole984A95C8
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/action_begins_role/DefaultPolicy/Resource
+  actionbeginslambda7A022F0B:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: >
+          import boto3
+
+          import json
+
+          import os
+
+          from boto3.dynamodb.conditions import Key
+
+          from decimal import Decimal
+
+
+          def default(obj):
+              if isinstance(obj, Decimal):
+                  return str(obj)
+              raise TypeError("Object of type '%s' is not JSON serializable" % type(obj).__name__)
+
+          def handler(event, context):
+              
+              value = event
+              
+              dynamodb = boto3.resource('dynamodb')
+              table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+              
+              response = table.query(
+                  IndexName='action',
+                  KeyConditionExpression=Key('pk').eq('AWS#') & Key('bk').begins_with('ACTION#'+value)
+              )
+              responsedata = response['Items']
+              while 'LastEvaluatedKey' in response:
+                  response = table.query(
+                      IndexName='action',
+                      KeyConditionExpression=Key('pk').eq('AWS#') & Key('sk').begins_with('ACTION#'+value),
+                      ExclusiveStartKey=response['LastEvaluatedKey']
+                  )
+                  responsedata.update(response['Items'])
+              
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(responsedata, default=default)
+              }
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - actionbeginsrole984A95C8
+          - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          DYNAMODB_TABLE:
+            Ref: policyE16B4B70
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+      Timeout: 30
+    DependsOn:
+      - actionbeginsroleDefaultPolicy8F0C9A57
+      - actionbeginsrole984A95C8
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/action_begins_lambda/Resource
+  actionbeginslogsFB18CBEA:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: actionbeginslambda7A022F0B
+      RetentionInDays: 1
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/action_begins_logs/Resource
+  servicebeginsrole86F73D8F:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_begins_role/Resource
+  servicebeginsroleDefaultPolicy7120B055:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:Query
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: servicebeginsroleDefaultPolicy7120B055
+      Roles:
+        - Ref: servicebeginsrole86F73D8F
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_begins_role/DefaultPolicy/Resource
+  servicebeginslambda57B51A11:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: >
+          import boto3
+
+          import json
+
+          import os
+
+          from boto3.dynamodb.conditions import Key
+
+          from decimal import Decimal
+
+
+          def default(obj):
+              if isinstance(obj, Decimal):
+                  return str(obj)
+              raise TypeError("Object of type '%s' is not JSON serializable" % type(obj).__name__)
+
+          def handler(event, context):
+              
+              value = event
+              
+              dynamodb = boto3.resource('dynamodb')
+              table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+              
+              response = table.query(KeyConditionExpression=Key('pk').eq('AWS#') & Key('sk').begins_with('ACTION#'+value))
+              responsedata = response['Items']
+              while 'LastEvaluatedKey' in response:
+                  response = table.query(
+                      KeyConditionExpression=Key('pk').eq('AWS#') & Key('sk').begins_with('ACTION#'+value),
+                      ExclusiveStartKey=response['LastEvaluatedKey']
+                  )
+                  responsedata.update(response['Items'])
+              
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(responsedata, default=default)
+              }
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - servicebeginsrole86F73D8F
+          - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          DYNAMODB_TABLE:
+            Ref: policyE16B4B70
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+      Timeout: 30
+    DependsOn:
+      - servicebeginsroleDefaultPolicy7120B055
+      - servicebeginsrole86F73D8F
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_begins_lambda/Resource
+  servicebeginslogsCD9871A5:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: servicebeginslambda57B51A11
+      RetentionInDays: 1
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_begins_logs/Resource
+  servicelistrole12DC57FA:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_list_role/Resource
+  servicelistroleDefaultPolicyCA7564CA:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: dynamodb:Query
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: servicelistroleDefaultPolicyCA7564CA
+      Roles:
+        - Ref: servicelistrole12DC57FA
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_list_role/DefaultPolicy/Resource
+  servicelistlambda67D7AB21:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: >
+          import boto3
+
+          import json
+
+          import os
+
+          from boto3.dynamodb.conditions import Key
+
+          from decimal import Decimal
+
+
+          def default(obj):
+              if isinstance(obj, Decimal):
+                  return str(obj)
+              raise TypeError("Object of type '%s' is not JSON serializable" % type(obj).__name__)
+
+          def handler(event, context):
+              
+              dynamodb = boto3.resource('dynamodb')
+              table = dynamodb.Table(os.environ['DYNAMODB_TABLE'])
+              
+              response = table.query(KeyConditionExpression=Key('pk').eq('AWS#') & Key('sk').begins_with('SERVICE#'))
+              responsedata = response['Items']
+              while 'LastEvaluatedKey' in response:
+                  response = table.query(
+                      KeyConditionExpression=Key('pk').eq('AWS#') & Key('sk').begins_with('SERVICE#'),
+                      ExclusiveStartKey=response['LastEvaluatedKey']
+                  )
+                  responsedata.update(response['Items'])
+              
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(responsedata, default=default)
+              }
+      Handler: index.handler
+      Role:
+        Fn::GetAtt:
+          - servicelistrole12DC57FA
+          - Arn
+      Runtime: python3.7
+      Environment:
+        Variables:
+          DYNAMODB_TABLE:
+            Ref: policyE16B4B70
+      Tags:
+        - Key: demystifying-star-permissions
+          Value: demystifying-star-permissions
+      Timeout: 30
+    DependsOn:
+      - servicelistroleDefaultPolicyCA7564CA
+      - servicelistrole12DC57FA
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_list_lambda/Resource
+  servicelistlogsE6394692:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Join:
+          - ""
+          - - /aws/lambda/
+            - Ref: servicelistlambda67D7AB21
+      RetentionInDays: 1
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/service_list_logs/Resource
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Modules: aws-cdk=1.78.0,@aws-cdk/assets=1.78.0,@aws-cdk/aws-apigateway=1.78.0,@aws-cdk/aws-apigatewayv2=1.78.0,@aws-cdk/aws-applicationautoscaling=1.78.0,@aws-cdk/aws-autoscaling=1.78.0,@aws-cdk/aws-autoscaling-common=1.78.0,@aws-cdk/aws-autoscaling-hooktargets=1.78.0,@aws-cdk/aws-batch=1.78.0,@aws-cdk/aws-certificatemanager=1.78.0,@aws-cdk/aws-cloudformation=1.78.0,@aws-cdk/aws-cloudfront=1.78.0,@aws-cdk/aws-cloudwatch=1.78.0,@aws-cdk/aws-codebuild=1.78.0,@aws-cdk/aws-codecommit=1.78.0,@aws-cdk/aws-codeguruprofiler=1.78.0,@aws-cdk/aws-codepipeline=1.78.0,@aws-cdk/aws-cognito=1.78.0,@aws-cdk/aws-dynamodb=1.78.0,@aws-cdk/aws-ec2=1.78.0,@aws-cdk/aws-ecr=1.78.0,@aws-cdk/aws-ecr-assets=1.78.0,@aws-cdk/aws-ecs=1.78.0,@aws-cdk/aws-efs=1.78.0,@aws-cdk/aws-elasticloadbalancing=1.78.0,@aws-cdk/aws-elasticloadbalancingv2=1.78.0,@aws-cdk/aws-events=1.78.0,@aws-cdk/aws-events-targets=1.78.0,@aws-cdk/aws-iam=1.78.0,@aws-cdk/aws-kinesis=1.78.0,@aws-cdk/aws-kinesisfirehose=1.78.0,@aws-cdk/aws-kms=1.78.0,@aws-cdk/aws-lambda=1.78.0,@aws-cdk/aws-logs=1.78.0,@aws-cdk/aws-route53=1.78.0,@aws-cdk/aws-route53-targets=1.78.0,@aws-cdk/aws-s3=1.78.0,@aws-cdk/aws-s3-assets=1.78.0,@aws-cdk/aws-sam=1.78.0,@aws-cdk/aws-secretsmanager=1.78.0,@aws-cdk/aws-servicediscovery=1.78.0,@aws-cdk/aws-sns=1.78.0,@aws-cdk/aws-sns-subscriptions=1.78.0,@aws-cdk/aws-sqs=1.78.0,@aws-cdk/aws-ssm=1.78.0,@aws-cdk/aws-stepfunctions=1.78.0,@aws-cdk/cloud-assembly-schema=1.78.0,@aws-cdk/core=1.78.0,@aws-cdk/custom-resources=1.78.0,@aws-cdk/cx-api=1.78.0,@aws-cdk/region-info=1.78.0,jsii-runtime=Python/3.8.6
+    Metadata:
+      aws:cdk:path: demystifying-star-permissions/CDKMetadata/Default
+    Condition: CDKMetadataAvailable
+Conditions:
+  CDKMetadataAvailable:
+    Fn::Or:
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ca-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-northwest-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-central-1
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-3
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - me-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - sa-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-2
+
